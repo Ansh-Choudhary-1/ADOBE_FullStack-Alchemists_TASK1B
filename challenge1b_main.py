@@ -234,8 +234,69 @@ class DocumentContentExtractor:
         return list(set(travel_terms))
 
 class UniversalSemanticAnalyzer:
-    """Universal semantic analyzer optimized for all domains"""
+    def _download_nltk_data(self):
+        try:
+            datasets = ['punkt', 'stopwords', 'averaged_perceptron_tagger', 'maxent_ne_chunker', 'words']
+            for dataset in datasets:
+                try:
+                    nltk.download(dataset, quiet=True)
+                except:
+                    pass  # Continue if download fails
+        except Exception as e:
+            print(f"Warning: Could not download NLTK data: {e}")
+        
+    def _analyze_domain_context(self, document_contents: List[str]) -> Dict[str, float]:
+        all_content = ' '.join(document_contents).lower()
+        domain_scores = {}
+        
+        for domain, signals in self.importance_signals.items():
+            score = 0.0
+            for signal in signals:
+                # Count occurrences with word boundaries
+                matches = len(re.findall(r'\b' + re.escape(signal) + r'\b', all_content))
+                score += matches
+            
+            # Normalize by total words and signal count
+            if all_content:
+                domain_scores[domain] = score / (len(all_content.split()) + len(signals))
+        
+        return domain_scores
+
+    def _extract_pdf_based_keywords(self, document_contents: List[str]) -> List[str]:
+        all_text = ' '.join(document_contents).lower()
+        
+        # Extract named entities and important terms
+        keywords = []
+        
+        # Extract capitalized words (likely proper nouns)
+        capitalized = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', ' '.join(document_contents))
+        keywords.extend([word.lower() for word in capitalized if len(word) > 2])
+        
+        # Extract repeated important terms
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', all_text)
+        word_freq = Counter(words)
+        
+        # Get most frequent meaningful words
+        common_words = [word for word, freq in word_freq.most_common(50) 
+                    if freq > 1 and len(word) > 3]
+        keywords.extend(common_words)
+        
+        return list(set(keywords))
     
+    def _extract_explicit_terms(self, query_text: str) -> List[str]:
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', query_text.lower())
+        
+     
+        try:
+            stop_words = set(stopwords.words('english'))
+            words = [word for word in words if word not in stop_words]
+        except:
+            # Fallback if NLTK data not available
+            common_stops = {'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'use', 'man', 'new', 'now', 'way', 'may', 'say'}
+            words = [word for word in words if word not in common_stops]
+        
+        return words
+
     def __init__(self):
         self.tfidf_vectorizer = TfidfVectorizer(
             max_features=3000,
